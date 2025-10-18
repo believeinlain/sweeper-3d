@@ -2,7 +2,7 @@ use std::f32::consts::{PI, TAU};
 
 use bevy::prelude::*;
 
-use crate::{input::ScreenPosition, GameState, InputEvent};
+use crate::{GameState, InputEvent, input::ScreenPosition};
 
 use super::GamePiece;
 
@@ -13,7 +13,7 @@ impl Plugin for CameraPlugin {
         app.add_systems(OnEnter(GameState::GameStart), spawn.after(super::cleanup));
         app.add_systems(Update, camera_controls.run_if(GameState::in_game()));
         app.add_event::<RayEvent>();
-        app.insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)));
+        app.insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)));
         #[cfg(feature = "debug-draw")]
         app.add_systems(Update, cursor_ray_gizmo.run_if(GameState::playable()));
     }
@@ -35,7 +35,7 @@ impl Default for MainCamera {
     }
 }
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum RayEvent {
     ClearBlock(Ray3d),
     MarkBlock(Ray3d),
@@ -46,21 +46,19 @@ pub(super) fn spawn(mut commands: Commands) {
     let translation = Vec3::ONE.normalize() * zoom;
 
     commands.spawn((
-        Camera3dBundle {
-            transform: Transform::from_translation(translation).looking_at(Vec3::ZERO, Vec3::Y),
-            ..Default::default()
-        },
+        Camera3d::default(),
+        Transform::from_translation(translation).looking_at(Vec3::ZERO, Vec3::Y),
         MainCamera::default(),
         GamePiece,
     ));
 }
 
 pub(super) fn camera_controls(
-    mut input_events: EventReader<InputEvent>,
+    mut input_events: MessageReader<InputEvent>,
     mut camera_transform: Query<(&Camera, &MainCamera, &mut Transform)>,
-    mut ray_events: EventWriter<RayEvent>,
+    mut ray_events: MessageWriter<RayEvent>,
 ) {
-    let (camera, main_camera, mut transform) = camera_transform.single_mut();
+    let (camera, main_camera, mut transform) = camera_transform.single_mut().unwrap();
     for input_event in input_events.read() {
         match input_event {
             InputEvent::RotateCamera { delta } => {
@@ -68,7 +66,7 @@ pub(super) fn camera_controls(
                 let delta_y = delta.y * PI;
                 // Rotate around local X axis and global Y axis
                 let camera_tilt = transform.up().dot(Vec3::Y);
-                debug!("Camera tilt: {camera_tilt}");
+                log::debug!("Camera tilt: {camera_tilt}");
                 let x_rot = Quat::from_axis_angle(
                     Vec3::Y,
                     if camera_tilt > 0.0 { -delta_x } else { delta_x },
@@ -96,14 +94,14 @@ pub(super) fn camera_controls(
             }
             InputEvent::ClearBlock(cursor_pos) => {
                 if let Some(ray) = get_cursor_ray(camera, &transform, *cursor_pos) {
-                    debug!("Send RayEvent::ClearBlock");
-                    ray_events.send(RayEvent::ClearBlock(ray));
+                    log::debug!("Send RayEvent::ClearBlock");
+                    ray_events.write(RayEvent::ClearBlock(ray));
                 }
             }
             InputEvent::MarkBlock(cursor_pos) => {
                 if let Some(ray) = get_cursor_ray(camera, &transform, *cursor_pos) {
-                    debug!("Send RayEvent::MarkBlock");
-                    ray_events.send(RayEvent::MarkBlock(ray));
+                    log::debug!("Send RayEvent::MarkBlock");
+                    ray_events.write(RayEvent::MarkBlock(ray));
                 }
             }
             _ => {}
@@ -116,7 +114,7 @@ fn get_cursor_ray(
     camera_trans: &Transform,
     cursor_pos: ScreenPosition,
 ) -> Option<Ray3d> {
-    let view = camera_trans.compute_matrix();
+    let view = camera_trans.to_matrix();
 
     let viewport = camera.logical_viewport_rect()?;
     let screen_size = camera.logical_target_size()?;
@@ -124,14 +122,14 @@ fn get_cursor_ray(
     let adj_cursor_pos =
         invert_cursor_pos - Vec2::new(viewport.min.x, screen_size.y - viewport.max.y);
 
-    let projection = camera.projection_matrix();
+    let projection = camera.clip_from_view();
     let far_ndc = projection.project_point3(Vec3::NEG_Z).z;
     let near_ndc = projection.project_point3(Vec3::Z).z;
     let cursor_ndc = (adj_cursor_pos / viewport.size()) * 2.0 - Vec2::ONE;
     let ndc_to_world: Mat4 = view * projection.inverse();
     let near = ndc_to_world.project_point3(cursor_ndc.extend(near_ndc));
     let far = ndc_to_world.project_point3(cursor_ndc.extend(far_ndc));
-    let ray_direction = far - near;
+    let ray_direction = Dir3::new(far - near).unwrap();
     Some(Ray3d::new(near, ray_direction))
 }
 

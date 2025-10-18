@@ -33,7 +33,7 @@ pub fn cleanup(
     mut result: ResMut<GameResult>,
 ) {
     for entity in &to_despawn {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
     *result = GameResult::default();
 }

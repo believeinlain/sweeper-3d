@@ -1,11 +1,12 @@
 use bevy::audio::PlaybackMode;
+use bevy::color::palettes;
 use bevy::math::bounding::{Aabb3d, Bounded3d, RayCast3d};
 use bevy::prelude::*;
 
 use super::camera::RayEvent;
 use super::minefield::{Contains, FieldEvent};
 use super::{GamePiece, GameResult, GameState};
-use crate::{FieldSettings, GameAssets};
+use crate::{AudioHandle, FieldSettings, GameAssets, MaterialHandle, MeshHandle};
 
 pub struct BlockPlugin;
 impl Plugin for BlockPlugin {
@@ -57,7 +58,7 @@ impl Block {
     }
 }
 
-#[derive(Debug, Event)]
+#[derive(Debug, Message)]
 pub enum BlockEvent {
     /// Uncover a block, detonating any contained mines.
     /// Received from the Minefield enitity after checking its contents.
@@ -103,14 +104,17 @@ impl BlockDisplay {
         block: Entity,
         commands: &mut Commands,
     ) {
-        let mut e = commands.get_or_spawn(block);
+        let mut e = commands.get_entity(block).unwrap();
         let sweeper_objects = game_assets.sweeper_objects.unwrap();
         match self {
-            Self::Hidden => e.insert((sweeper_objects.block_merged.clone(), mat.hidden.clone())),
-            Self::Marked => e.insert(mat.marked.clone()),
+            Self::Hidden => e.insert((
+                MeshHandle(sweeper_objects.block_merged.clone()),
+                MaterialHandle(mat.hidden.clone()),
+            )),
+            Self::Marked => e.insert(MaterialHandle(mat.marked.clone())),
             Self::Revealed { adjacent_mines } => {
-                e.remove::<Handle<Mesh>>();
-                e.remove::<Handle<StandardMaterial>>();
+                e.remove::<MeshHandle>();
+                e.remove::<MaterialHandle>();
                 let fives_place = adjacent_mines / 5;
                 let ones_place = adjacent_mines % 5;
                 if fives_place == 0 {
@@ -124,12 +128,11 @@ impl BlockDisplay {
                     } {
                         let child = e
                             .commands()
-                            .spawn(PbrBundle {
-                                mesh: child_mesh,
-                                material: child_mat,
-                                transform: Transform::from_scale(Vec3::splat(1.5)),
-                                ..default()
-                            })
+                            .spawn((
+                                MeshHandle(child_mesh),
+                                MaterialHandle(child_mat),
+                                Transform::from_scale(Vec3::splat(1.5)),
+                            ))
                             .id();
                         e.add_child(child)
                     } else {
@@ -146,15 +149,18 @@ impl BlockDisplay {
                     } {
                         let orbit = e
                             .commands()
-                            .spawn(PbrBundle {
-                                mesh: orbit_mesh,
-                                material: orbit_mat,
-                                ..default()
-                            })
+                            .spawn((
+                                MeshHandle(orbit_mesh),
+                                MaterialHandle(orbit_mat),
+                                Transform::default(),
+                            ))
                             .id();
                         e.add_child(orbit);
                     }
-                    e.insert((sweeper_objects.ring.clone(), mat.purple.clone()));
+                    e.insert((
+                        MeshHandle(sweeper_objects.ring.clone()),
+                        MaterialHandle(mat.purple.clone()),
+                    ));
                     let (child_mesh, child_mat) = match fives_place {
                         1 => (sweeper_objects.single1.clone(), mat.blue.clone()),
                         2 => (sweeper_objects.single2.clone(), mat.green.clone()),
@@ -166,27 +172,26 @@ impl BlockDisplay {
                     };
                     let child = e
                         .commands()
-                        .spawn(PbrBundle {
-                            mesh: child_mesh,
-                            material: child_mat,
-                            transform: Transform::from_scale(Vec3::splat(3.0)),
-                            ..default()
-                        })
+                        .spawn((
+                            MeshHandle(child_mesh),
+                            MaterialHandle(child_mat),
+                            Transform::from_scale(Vec3::splat(3.0)),
+                        ))
                         .id();
                     e.add_child(child)
                 }
             }
             Self::RevealedMine => e.insert((
-                game_assets.sweeper_objects.unwrap().mine_merged.clone(),
-                mat.mine.clone(),
+                MeshHandle(game_assets.sweeper_objects.unwrap().mine_merged.clone()),
+                MaterialHandle(mat.mine.clone()),
             )),
             Self::MarkedMine => e.insert((
-                game_assets.sweeper_objects.unwrap().mine_merged.clone(),
-                mat.green.clone(),
+                MeshHandle(game_assets.sweeper_objects.unwrap().mine_merged.clone()),
+                MaterialHandle(mat.green.clone()),
             )),
             Self::MissedMine => e.insert((
-                game_assets.sweeper_objects.unwrap().mine_merged.clone(),
-                mat.red.clone(),
+                MeshHandle(game_assets.sweeper_objects.unwrap().mine_merged.clone()),
+                MaterialHandle(mat.red.clone()),
             )),
         };
     }
@@ -215,13 +220,13 @@ pub(super) fn create_materials(
             normal_map_texture: Some(asset_server.load("concrete_02_normal.png")),
             ..default()
         }),
-        marked: materials.add(Color::RED),
-        blue: materials.add(Color::BLUE),
-        green: materials.add(Color::GREEN),
-        red: materials.add(Color::RED),
-        orange: materials.add(Color::ORANGE),
-        purple: materials.add(Color::PURPLE),
-        mine: materials.add(Color::DARK_GRAY),
+        marked: materials.add(Color::from(palettes::css::RED)),
+        blue: materials.add(Color::from(palettes::css::BLUE)),
+        green: materials.add(Color::from(palettes::css::GREEN)),
+        red: materials.add(Color::from(palettes::css::RED)),
+        orange: materials.add(Color::from(palettes::css::ORANGE)),
+        purple: materials.add(Color::from(palettes::css::PURPLE)),
+        mine: materials.add(Color::from(palettes::css::DARK_GRAY)),
     })
 }
 
@@ -231,24 +236,18 @@ pub(super) fn setup(
     mut commands: Commands,
     block_mat: Res<BlockMaterials>,
     game_assets: Res<GameAssets>,
-    mut field_events: EventWriter<FieldEvent>,
+    mut field_events: MessageWriter<FieldEvent>,
 ) {
     let mut add_cube = |index, pos| {
         let transform = Transform::from_translation(pos);
-        let bb = Cuboid::new(1.0, 1.0, 1.0).aabb_3d(transform.translation, transform.rotation);
+        let bb = Cuboid::new(1.0, 1.0, 1.0)
+            .aabb_3d(Isometry3d::new(transform.translation, transform.rotation));
         let block = commands
-            .spawn((
-                PbrBundle {
-                    transform,
-                    ..default()
-                },
-                Block::new(bb, index),
-                GamePiece,
-            ))
+            .spawn((transform, Block::new(bb, index), GamePiece))
             .id();
         BlockDisplay::Hidden.spawn(&game_assets, &block_mat, block, &mut commands);
-        debug!("Send FieldEvent::SpawnBlock");
-        field_events.send(FieldEvent::SpawnBlock(block, index));
+        log::debug!("Send FieldEvent::SpawnBlock");
+        field_events.write(FieldEvent::SpawnBlock(block, index));
     };
 
     let field_size = field_settings.field_size;
@@ -263,25 +262,25 @@ pub(super) fn setup(
 }
 
 pub(super) fn handle_ray_events(
-    mut ray_events: EventReader<RayEvent>,
+    mut ray_events: MessageReader<RayEvent>,
     blocks: Query<(Entity, &Block)>,
-    mut block_events: EventWriter<BlockEvent>,
-    mut field_events: EventWriter<FieldEvent>,
+    mut block_events: MessageWriter<BlockEvent>,
+    mut field_events: MessageWriter<FieldEvent>,
 ) {
     for ray_event in ray_events.read() {
         match ray_event {
             RayEvent::ClearBlock(ray) => {
                 if let Some((block, _entity, index)) = raycast_blocks(*ray, &blocks) {
                     if !block.marked {
-                        debug!("Send FieldEvent::ClearBlock");
-                        field_events.send(FieldEvent::ClearBlock(index));
+                        log::debug!("Send FieldEvent::ClearBlock");
+                        field_events.write(FieldEvent::ClearBlock(index));
                     }
                 }
             }
             RayEvent::MarkBlock(ray) => {
                 if let Some((_block, entity, _index)) = raycast_blocks(*ray, &blocks) {
-                    debug!("Send BlockEvent::Mark");
-                    block_events.send(BlockEvent::Mark(entity));
+                    log::debug!("Send BlockEvent::Mark");
+                    block_events.write(BlockEvent::Mark(entity));
                 }
             }
         }
@@ -311,13 +310,13 @@ fn raycast_blocks<'a>(
 
     let (dist, hit, block) = hits.first()?;
     let index = block.index;
-    debug!("Block {hit:?} {index:?} hit at {dist}");
+    log::debug!("Block {hit:?} {index:?} hit at {dist}");
     Some((block, *hit, index))
 }
 
 pub(super) fn handle_block_events(
     mut commands: Commands,
-    mut block_events: EventReader<BlockEvent>,
+    mut block_events: MessageReader<BlockEvent>,
     mut blocks: Query<&mut Block>,
     block_mat: Res<BlockMaterials>,
     game_assets: Res<GameAssets>,
@@ -330,13 +329,13 @@ pub(super) fn handle_block_events(
         let mut block = match blocks.get_mut(id) {
             Ok(block) => block,
             Err(err) => {
-                error!("Unable to retrieve Block {id:?}: {err}");
+                log::error!("Unable to retrieve Block {id:?}: {err}");
                 continue;
             }
         };
         match event {
             BlockEvent::Clear(entity, contains) => {
-                debug!("Revealed block {entity:?}");
+                log::debug!("Revealed block {entity:?}");
                 block.revealed = Some(*contains);
                 any_blocks_cleared = true;
                 match *contains {
@@ -356,7 +355,7 @@ pub(super) fn handle_block_events(
             }
             BlockEvent::EndReveal(entity, contains) => {
                 // TODO: maybe on EndReveal we can maintain a wireframe of the blocks that weren't clicked?
-                debug!("Revealed block {entity:?} at end of game");
+                log::debug!("Revealed block {entity:?} at end of game");
                 match *contains {
                     Contains::Mine if block.revealed.is_some() => {
                         BlockDisplay::MissedMine.spawn(
@@ -389,12 +388,12 @@ pub(super) fn handle_block_events(
             }
             BlockEvent::Mark(entity) => match block.marked {
                 true => {
-                    debug!("Unmark block {entity:?}");
+                    log::debug!("Unmark block {entity:?}");
                     block.marked = false;
                     BlockDisplay::Hidden.spawn(&game_assets, &block_mat, *entity, &mut commands);
                 }
                 false => {
-                    debug!("Mark block {entity:?}");
+                    log::debug!("Mark block {entity:?}");
                     block.marked = true;
                     BlockDisplay::Marked.spawn(&game_assets, &block_mat, *entity, &mut commands);
                 }
@@ -402,13 +401,13 @@ pub(super) fn handle_block_events(
         }
     }
     if any_blocks_cleared {
-        commands.spawn(AudioBundle {
-            source: game_assets.pop2.clone(),
-            settings: PlaybackSettings {
+        commands.spawn((
+            AudioHandle(game_assets.pop2.clone()),
+            PlaybackSettings {
                 mode: PlaybackMode::Despawn,
                 ..default()
             },
-        });
+        ));
     }
 }
 

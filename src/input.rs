@@ -8,7 +8,7 @@ use bevy::window::PrimaryWindow;
 pub struct InputPlugin;
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<InputEvent>()
+        app.add_message::<InputEvent>()
             .add_systems(PreUpdate, (mouse_input, keyboard_input));
     }
 }
@@ -30,7 +30,7 @@ impl From<Vec2> for ScreenPosition {
     }
 }
 
-#[derive(Debug, Event)]
+#[derive(Debug, Message)]
 pub enum InputEvent {
     /// Clear a block at a screen position (default: left click).
     ClearBlock(ScreenPosition),
@@ -57,15 +57,15 @@ const SCROLL_PIXELS_PER_LINE: f32 = 8.0;
 /// Handle mouse input. All available events are consumed and accumulated into possibly fewer
 /// InputEvents for efficiency.
 fn mouse_input(
-    mut mouse_wheel_events: EventReader<MouseWheel>,
-    mut mouse_button_events: EventReader<MouseButtonInput>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut mouse_wheel_events: MessageReader<MouseWheel>,
+    mut mouse_button_events: MessageReader<MouseButtonInput>,
+    mut mouse_motion_events: MessageReader<MouseMotion>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     primary_window: Query<&Window, With<PrimaryWindow>>,
-    mut input_events: EventWriter<InputEvent>,
+    mut input_events: MessageWriter<InputEvent>,
 ) {
     // Get the singular primary window. Multiple windows is not handled.
-    let window = primary_window.single();
+    let window = primary_window.single().unwrap();
     // Handle mouse motion events only if the rotate button (default MMB) is pressed
     if mouse_button.pressed(MouseButton::Middle) {
         // Collect all motion events into a single delta
@@ -77,8 +77,8 @@ fn mouse_input(
         if delta.length_squared() > 0.0 {
             // Scale based on window size
             let delta = Vec2::new(delta.x / window.width(), delta.y / window.height());
-            debug!("Send InputEvent::RotateCamera");
-            input_events.send(InputEvent::RotateCamera { delta });
+            log::debug!("Send InputEvent::RotateCamera");
+            input_events.write(InputEvent::RotateCamera { delta });
         }
     } else {
         // If the rotate button is not pressed, clear all rotation events
@@ -91,20 +91,20 @@ fn mouse_input(
         let scroll = mouse_wheel_event.y;
         scroll_delta += match mouse_wheel_event.unit {
             bevy::input::mouse::MouseScrollUnit::Line => {
-                debug!("Scrolled {scroll} lines");
+                log::debug!("Scrolled {scroll} lines");
                 scroll
             }
             bevy::input::mouse::MouseScrollUnit::Pixel => {
                 let lines = scroll * SCROLL_PIXELS_PER_LINE;
-                debug!("Scrolled {scroll} pixels ({lines} lines)");
+                log::debug!("Scrolled {scroll} pixels ({lines} lines)");
                 lines
             }
         };
     }
     // Only send an event if the delta is nonzero
     if scroll_delta.abs() > 0.0 {
-        debug!("Send InputEvent::ZoomCamera");
-        input_events.send(InputEvent::ZoomCamera {
+        log::debug!("Send InputEvent::ZoomCamera");
+        input_events.write(InputEvent::ZoomCamera {
             delta: scroll_delta,
         });
     }
@@ -115,15 +115,15 @@ fn mouse_input(
     // Handle mouse click events (default LMB or RMB)
     for mouse_button_event in mouse_button_events.read() {
         if mouse_button_event.state.is_pressed() {
-            debug!("Click at {cursor_pos:?}");
+            log::debug!("Click at {cursor_pos:?}");
             match mouse_button_event.button {
                 MouseButton::Left => {
-                    debug!("Send InputEvent::ClearBlock");
-                    input_events.send(InputEvent::ClearBlock(cursor_pos.into()));
+                    log::debug!("Send InputEvent::ClearBlock");
+                    input_events.write(InputEvent::ClearBlock(cursor_pos.into()));
                 }
                 MouseButton::Right => {
-                    debug!("Send InputEvent::MarkBlock");
-                    input_events.send(InputEvent::MarkBlock(cursor_pos.into()));
+                    log::debug!("Send InputEvent::MarkBlock");
+                    input_events.write(InputEvent::MarkBlock(cursor_pos.into()));
                 }
                 _ => {}
             };
@@ -132,16 +132,16 @@ fn mouse_input(
 }
 
 fn keyboard_input(
-    mut key_events: EventReader<KeyboardInput>,
-    mut input_events: EventWriter<InputEvent>,
+    mut key_events: MessageReader<KeyboardInput>,
+    mut input_events: MessageWriter<InputEvent>,
 ) {
     for key_event in key_events.read() {
         match key_event {
             KeyboardInput {
                 key_code, state, ..
             } if matches!(key_code, KeyCode::Escape) && state.is_pressed() => {
-                debug!("Send InputEvent::Pause");
-                input_events.send(InputEvent::Pause);
+                log::debug!("Send InputEvent::Pause");
+                input_events.write(InputEvent::Pause);
             }
             _ => {}
         }

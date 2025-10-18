@@ -1,13 +1,13 @@
 use bevy::{app::AppExit, prelude::*};
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 
-use crate::{game::GameResult, FieldSettings, GameSettings, GameState, Safety};
+use crate::{FieldSettings, GameSettings, GameState, Safety, game::GameResult};
 
 pub struct MenuPlugin;
 impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin).add_systems(
-            Update,
+        app.add_plugins(EguiPlugin::default()).add_systems(
+            EguiPrimaryContextPass,
             (
                 display_main_menu.run_if(in_state(GameState::MenuMain)),
                 display_custom_menu.run_if(in_state(GameState::MenuCustom)),
@@ -50,9 +50,9 @@ fn display_main_menu(
     mut contexts: EguiContexts,
     mut field_settings: ResMut<FieldSettings>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut exit_events: EventWriter<AppExit>,
+    mut exit_events: MessageWriter<AppExit>,
 ) {
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().expect("unable to get gui context");
     global_settings(ctx);
     create_menu_window("Sweeper 3D").show(ctx, |ui| {
         ui.allocate_ui(egui::Vec2::new(0.0, 0.0), |ui| {
@@ -79,7 +79,7 @@ fn display_main_menu(
                     next_state.set(GameState::MenuSettings);
                 }
                 if ui.add(egui::Button::new("Quit")).clicked() {
-                    exit_events.send(AppExit);
+                    exit_events.write(AppExit::Success);
                 }
             });
         });
@@ -92,16 +92,16 @@ fn display_custom_menu(
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     let (field_size, mine_density) = field_settings.fields_mut();
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().expect("unable to get gui context");
     global_settings(ctx);
     create_menu_window("Custom Game").show(ctx, |ui| {
         ui.allocate_ui(egui::Vec2::new(0.0, 0.0), |ui| {
             ui.vertical_centered(|ui| {
                 ui.horizontal_centered(|ui| {
                     ui.add(egui::Label::new("Size:"));
-                    ui.add(egui::DragValue::new(&mut field_size[0]).clamp_range(1..=20));
-                    ui.add(egui::DragValue::new(&mut field_size[1]).clamp_range(1..=20));
-                    ui.add(egui::DragValue::new(&mut field_size[2]).clamp_range(1..=20));
+                    ui.add(egui::DragValue::new(&mut field_size[0]).range(1..=20));
+                    ui.add(egui::DragValue::new(&mut field_size[1]).range(1..=20));
+                    ui.add(egui::DragValue::new(&mut field_size[2]).range(1..=20));
                 });
                 ui.horizontal_centered(|ui| {
                     ui.add(egui::Label::new("Mine Density:"));
@@ -130,7 +130,7 @@ fn display_settings_menu(
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     let safety = &mut game_settings.safety;
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().expect("unable to get gui context");
     global_settings(ctx);
     create_menu_window("Settings").show(ctx, |ui| {
         ui.allocate_ui(egui::Vec2::new(0.0, 0.0), |ui| {
@@ -164,14 +164,14 @@ fn display_settings_menu(
 fn display_game_over(
     mut contexts: EguiContexts,
     mut next_state: ResMut<NextState<GameState>>,
-    mut exit_events: EventWriter<AppExit>,
+    mut exit_events: MessageWriter<AppExit>,
     game_result: Res<GameResult>,
 ) {
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().expect("unable to get gui context");
     global_settings(ctx);
     egui::Window::new(match *game_result {
         GameResult::Unfinished => {
-            error!("Should not be displaying game over menu when GameResult::Unfinished");
+            log::error!("Should not be displaying game over menu when GameResult::Unfinished");
             "Game Over"
         }
         GameResult::Failure => "Game Over",
@@ -192,7 +192,7 @@ fn display_game_over(
                         next_state.set(GameState::MenuMain);
                     }
                     if ui.add(egui::Button::new("Quit")).clicked() {
-                        exit_events.send(AppExit);
+                        exit_events.write(AppExit::Success);
                     }
                 });
             });

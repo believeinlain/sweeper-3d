@@ -1,10 +1,10 @@
 [package]
 name = "sweeper-3d"
 version = "0.1.4"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-bevy = { version = "0.13", default-features = false, features = [
+bevy = { version = "0.17", default-features = false, features = [
     "bevy_gltf",
     "bevy_asset",
     "bevy_audio",
@@ -12,7 +12,7 @@ bevy = { version = "0.13", default-features = false, features = [
     "bevy_render",
     "bevy_text",
     "bevy_pbr",
-    "multi-threaded",
+    "bevy_state",
     "png",
     "hdr",
     "vorbis",
@@ -20,10 +20,11 @@ bevy = { version = "0.13", default-features = false, features = [
     "tonemapping_luts",
     "default_font",
 ] }
-bevy_egui = "0.26"
-egui_extras = { version = "0.26", features = ["svg"] }
-ndarray = "0.15"
-rand = "0.8"
+bevy_egui = "0.38"
+egui_extras = { version = "0.33", features = ["svg"] }
+ndarray = "0.16"
+rand = "0.9"
+log = "0.4"
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

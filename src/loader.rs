@@ -1,6 +1,6 @@
 use bevy::gltf::{Gltf, GltfMesh};
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui_extras::install_image_loaders;
 
 use crate::GameState;
@@ -11,9 +11,10 @@ impl Plugin for LoaderPlugin {
         app.init_resource::<GameAssets>()
             .add_systems(Startup, load_assets)
             .add_systems(
-                Update,
-                (update, show_splash).run_if(in_state(GameState::Loading)),
-            );
+                EguiPrimaryContextPass,
+                show_splash.run_if(in_state(GameState::Loading)),
+            )
+            .add_systems(Update, update.run_if(in_state(GameState::Loading)));
     }
 }
 
@@ -98,13 +99,13 @@ where
 }
 
 fn load_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
-    info!("Loading sweeper_objects");
+    log::info!("Loading sweeper_objects");
     let sweeper_objects = Loadable::from(asset_server.load("sweeper_objects.gltf"));
-    info!("Loading sound effects");
+    log::info!("Loading sound effects");
     let pop1 = asset_server.load("pop1.ogg");
     let pop2 = asset_server.load("pop2.ogg");
     let pop3 = asset_server.load("pop3.ogg");
-    info!("Loading textures");
+    log::info!("Loading textures");
     let concrete_02_albedo = asset_server.load("concrete_02_albedo.png");
     let concrete_02_normal = asset_server.load("concrete_02_normal.png");
     let concrete_02_orm = asset_server.load("concrete_02_orm.png");
@@ -129,13 +130,13 @@ fn update(
 ) {
     if game_assets.all_loaded() {
         // Hold so we can see the splash screen
-        if time.elapsed_seconds() >= 1.0 {
-            info!("All assets loaded");
+        if time.elapsed_secs() >= 1.0 {
+            log::info!("All assets loaded");
             next_state.set(GameState::MenuMain);
         }
     } else if let Loadable::Loading(sweeper_objects) = &game_assets.sweeper_objects {
         if asset_server.is_loaded_with_dependencies(sweeper_objects) {
-            info!("Sweeper objects loaded");
+            log::info!("Sweeper objects loaded");
             let gltf = gltf_assets.get(sweeper_objects).unwrap();
             let get_mesh = |name| {
                 gltf_meshes
@@ -174,7 +175,7 @@ fn update(
 }
 
 fn show_splash(mut contexts: EguiContexts, mut window: Query<&mut Window>) {
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().expect("unable to get gui context");
     install_image_loaders(ctx);
     egui::CentralPanel::default()
         .frame(egui::Frame::default().fill(egui::Color32::BLACK))
@@ -185,5 +186,5 @@ fn show_splash(mut contexts: EguiContexts, mut window: Query<&mut Window>) {
                 )));
             });
         });
-    window.single_mut().visible = true;
+    window.single_mut().unwrap().visible = true;
 }

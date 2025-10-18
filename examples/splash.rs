@@ -3,8 +3,8 @@
 
 use bevy::prelude::*;
 use bevy_egui::{
-    egui::{self, Color32},
     EguiContexts, EguiPlugin,
+    egui::{self, Color32},
 };
 use egui_extras::install_image_loaders;
 

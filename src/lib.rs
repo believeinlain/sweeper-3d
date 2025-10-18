@@ -16,6 +16,15 @@ pub use loader::LoaderPlugin;
 pub use menu::MenuPlugin;
 pub use settings::SettingsPlugin;
 
+#[derive(Debug, Component)]
+pub struct MaterialHandle(Handle<StandardMaterial>);
+
+#[derive(Debug, Component)]
+pub struct MeshHandle(Handle<Mesh>);
+
+#[derive(Debug, Component)]
+pub struct AudioHandle(Handle<AudioSource>);
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum GameState {
     /// Loading
@@ -38,13 +47,13 @@ pub enum GameState {
 }
 impl GameState {
     /// Any in-game state. [`GameState::GameStart`] || [`GameState::GamePlaying`] || [`GameState::GameOver`].
-    pub fn in_game() -> impl Condition<()> {
+    pub fn in_game() -> impl SystemCondition<()> {
         in_state(Self::GameStart)
-            .or_else(in_state(Self::GamePlaying))
-            .or_else(in_state(Self::GameOver))
+            .or(in_state(Self::GamePlaying))
+            .or(in_state(Self::GameOver))
     }
     /// Whether moves are allowed. [`GameState::GameStart`] || [`GameState::GamePlaying`].
-    pub fn playable() -> impl Condition<()> {
-        in_state(Self::GameStart).or_else(in_state(Self::GamePlaying))
+    pub fn playable() -> impl SystemCondition<()> {
+        in_state(Self::GameStart).or(in_state(Self::GamePlaying))
     }
 }

@@ -5,8 +5,8 @@ use ndarray::prelude::*;
 use rand::prelude::*;
 
 use super::{
-    block::{Block, BlockEvent},
     GamePiece, GameResult, GameState,
+    block::{Block, BlockEvent},
 };
 use crate::{FieldSettings, GameSettings, Safety};
 
@@ -26,7 +26,7 @@ impl Plugin for FieldPlugin {
     }
 }
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum FieldEvent {
     SpawnBlock(Entity, [usize; 3]),
     ClearBlock([usize; 3]),
@@ -96,13 +96,15 @@ impl Minefield {
         for (entity, block) in blocks {
             self.cells[block.index()].block = Some(entity)
         }
-        info!("Creating minefield");
+        log::info!("Creating minefield");
         let mut rng = rand::thread_rng();
         let num_blocks = self.cells.iter().count();
         let num_mines = (num_blocks as f64 * self.density) as usize;
-        debug!(
+        log::debug!(
             "Density {} => num_mines = {}/{}",
-            self.density, num_mines, num_blocks
+            self.density,
+            num_mines,
+            num_blocks
         );
         // Determine safe cells based on safety and click location
         let safe_cells = match self.safety {
@@ -124,7 +126,7 @@ impl Minefield {
             .filter(|i| {
                 let safe = safe_cells.contains(i);
                 if safe {
-                    debug!("Ignoring safe cell {i}");
+                    log::debug!("Ignoring safe cell {i}");
                 }
                 !safe
             })
@@ -157,7 +159,7 @@ impl Minefield {
             })
             .collect();
         for index in mines {
-            debug!("Placed mine at {index:?}");
+            log::debug!("Placed mine at {index:?}");
             let (i, j, k) = index;
             let mut increment_adjacent = |i_off, j_off, k_off| {
                 let adj_index = (
@@ -170,7 +172,7 @@ impl Minefield {
                         ref mut adjacent_mines,
                     } = adj.contains
                     {
-                        debug!("Increment adjacent at {adj_index:?}");
+                        log::debug!("Increment adjacent at {adj_index:?}");
                         *adjacent_mines += 1;
                     }
                 }
@@ -218,7 +220,7 @@ impl Minefield {
     fn reveal_adjacent(
         &mut self,
         index: (usize, usize, usize),
-        block_events: &mut EventWriter<BlockEvent>,
+        block_events: &mut MessageWriter<BlockEvent>,
     ) {
         let (i, j, k) = index;
         for i_off in -1..=1 {
@@ -255,8 +257,8 @@ impl Minefield {
                     adj.revealed = true;
                     // Send a message to reveal this block
                     let event = BlockEvent::Clear(adj_id, contains);
-                    debug!("Send {event:?}");
-                    block_events.send(event);
+                    log::debug!("Send {event:?}");
+                    block_events.write(event);
                     // Recurse only if this block was not adjacent to any mines
                     if adjacent_mines == 0 {
                         self.reveal_adjacent(adj_index, block_events);
@@ -295,26 +297,26 @@ pub(super) fn handle_field_events(
     mut game_result: ResMut<GameResult>,
     blocks: Query<(Entity, &Block)>,
     mut field: Query<&mut Minefield>,
-    mut field_events: EventReader<FieldEvent>,
-    mut block_events: EventWriter<BlockEvent>,
+    mut field_events: MessageReader<FieldEvent>,
+    mut block_events: MessageWriter<BlockEvent>,
 ) {
     for event in field_events.read() {
         match event {
             FieldEvent::SpawnBlock(entity, index) => {
-                let mut field = field.single_mut();
+                let mut field = field.single_mut().unwrap();
                 let Some(cell) = field.cells.get_mut(*index) else {
                     continue;
                 };
                 cell.block = Some(*entity);
             }
             FieldEvent::ClearBlock(index) => {
-                let mut field = field.single_mut();
+                let mut field = field.single_mut().unwrap();
                 let Some(cell) = field.cells.get_mut(*index) else {
                     continue;
                 };
                 cell.revealed = true;
                 if matches!(game_state.get(), GameState::GameStart) {
-                    debug!("Transition to GameState::Playing");
+                    log::debug!("Transition to GameState::Playing");
                     next_state.set(GameState::GamePlaying);
                     field.initialize(&blocks, index.into());
                 }
@@ -324,14 +326,14 @@ pub(super) fn handle_field_events(
                 };
                 let contains = cell.contains;
                 let event = BlockEvent::Clear(cell.block.unwrap(), contains);
-                debug!("Send {event:?}");
-                block_events.send(event);
+                log::debug!("Send {event:?}");
+                block_events.write(event);
                 if matches!(contains, Contains::Empty { adjacent_mines } if adjacent_mines == 0) {
                     field.reveal_adjacent((index[0], index[1], index[2]), &mut block_events);
                 }
                 if field.fully_revealed() {
-                    info!("Victory!");
-                    debug!("Transition to GameState::Ended");
+                    log::info!("Victory!");
+                    log::debug!("Transition to GameState::Ended");
                     *game_result = GameResult::Victory;
                     next_state.set(GameState::GameOver);
                 }
@@ -340,9 +342,9 @@ pub(super) fn handle_field_events(
     }
 }
 
-fn reveal_all(mut field: Query<&mut Minefield>, mut block_events: EventWriter<BlockEvent>) {
-    for cell in field.single_mut().cells.iter_mut() {
+fn reveal_all(mut field: Query<&mut Minefield>, mut block_events: MessageWriter<BlockEvent>) {
+    for cell in field.single_mut().unwrap().cells.iter_mut() {
         cell.revealed = true;
-        block_events.send(BlockEvent::EndReveal(cell.block.unwrap(), cell.contains));
+        block_events.write(BlockEvent::EndReveal(cell.block.unwrap(), cell.contains));
     }
 }
