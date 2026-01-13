@@ -1,14 +1,28 @@
 // Disable console window in Windows
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use bevy::{log::LogPlugin, prelude::*, window::WindowResolution};
+use bevy::{
+    log::LogPlugin,
+    prelude::*,
+    render::{
+        settings::{Backends, WgpuSettings},
+        RenderPlugin,
+    },
+    window::WindowResolution,
+};
 use sweeper_3d::{GamePlugin, GameState, InputPlugin, LoaderPlugin, MenuPlugin, SettingsPlugin};
 
 fn main() {
+    let mut wgpu_settings = WgpuSettings::default();
+    wgpu_settings.backends = Some(Backends::VULKAN);
     App::new()
         .init_state::<GameState>()
         .add_plugins(
             DefaultPlugins
+                .set(RenderPlugin {
+                    render_creation: wgpu_settings.into(),
+                    ..default()
+                })
                 // Window settings
                 .set(WindowPlugin {
                     primary_window: Some(Window {
